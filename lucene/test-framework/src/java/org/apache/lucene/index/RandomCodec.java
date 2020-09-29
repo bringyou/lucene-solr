@@ -40,8 +40,8 @@ import org.apache.lucene.codecs.blockterms.LuceneVarGapDocFreqInterval;
 import org.apache.lucene.codecs.blockterms.LuceneVarGapFixedInterval;
 import org.apache.lucene.codecs.blocktreeords.BlockTreeOrdsPostingsFormat;
 import org.apache.lucene.codecs.bloom.TestBloomFilteredLucenePostings;
-import org.apache.lucene.codecs.lucene60.Lucene60PointsReader;
-import org.apache.lucene.codecs.lucene60.Lucene60PointsWriter;
+import org.apache.lucene.codecs.lucene86.Lucene86PointsReader;
+import org.apache.lucene.codecs.lucene86.Lucene86PointsWriter;
 import org.apache.lucene.codecs.memory.DirectPostingsFormat;
 import org.apache.lucene.codecs.memory.FSTPostingsFormat;
 import org.apache.lucene.codecs.mockrandom.MockRandomPostingsFormat;
@@ -49,6 +49,7 @@ import org.apache.lucene.index.PointValues.IntersectVisitor;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.TestUtil;
+import org.apache.lucene.util.bkd.BKDConfig;
 import org.apache.lucene.util.bkd.BKDWriter;
 
 /**
@@ -97,21 +98,24 @@ public class RandomCodec extends AssertingCodec {
       @Override
       public PointsWriter fieldsWriter(SegmentWriteState writeState) throws IOException {
 
-        // Randomize how BKDWriter chooses its splis:
+        // Randomize how BKDWriter chooses its splits:
 
-        return new Lucene60PointsWriter(writeState, maxPointsInLeafNode, maxMBSortInHeap) {
+        return new Lucene86PointsWriter(writeState, maxPointsInLeafNode, maxMBSortInHeap) {
           @Override
           public void writeField(FieldInfo fieldInfo, PointsReader reader) throws IOException {
 
             PointValues values = reader.getValues(fieldInfo.name);
 
+            BKDConfig config = new BKDConfig(fieldInfo.getPointDimensionCount(),
+                fieldInfo.getPointIndexDimensionCount(),
+                fieldInfo.getPointNumBytes(),
+                maxPointsInLeafNode);
+
+
             try (BKDWriter writer = new RandomlySplittingBKDWriter(writeState.segmentInfo.maxDoc(),
                                                                    writeState.directory,
                                                                    writeState.segmentInfo.name,
-                                                                   fieldInfo.getPointDimensionCount(),
-                                                                   fieldInfo.getPointIndexDimensionCount(),
-                                                                   fieldInfo.getPointNumBytes(),
-                                                                   maxPointsInLeafNode,
+                                                                   config,
                                                                    maxMBSortInHeap,
                                                                    values.size(),
                                                                    bkdSplitRandomSeed ^ fieldInfo.name.hashCode())) {
@@ -132,8 +136,10 @@ public class RandomCodec extends AssertingCodec {
                   });
 
                 // We could have 0 points on merge since all docs with dimensional fields may be deleted:
-                if (writer.getPointCount() > 0) {
-                  indexFPs.put(fieldInfo.name, writer.finish(dataOut));
+                Runnable finalizer = writer.finish(metaOut, indexOut, dataOut);
+                if (finalizer != null) {
+                  metaOut.writeInt(fieldInfo.number);
+                  finalizer.run();
                 }
               }
           }
@@ -142,7 +148,7 @@ public class RandomCodec extends AssertingCodec {
 
       @Override
       public PointsReader fieldsReader(SegmentReadState readState) throws IOException {
-        return new Lucene60PointsReader(readState);
+        return new Lucene86PointsReader(readState);
       }
     });
   }
@@ -254,10 +260,9 @@ public class RandomCodec extends AssertingCodec {
 
     final Random random;
 
-    public RandomlySplittingBKDWriter(int maxDoc, Directory tempDir, String tempFileNamePrefix, int numDataDims, int numIndexDims,
-                                      int bytesPerDim, int maxPointsInLeafNode, double maxMBSortInHeap,
+    public RandomlySplittingBKDWriter(int maxDoc, Directory tempDir, String tempFileNamePrefix, BKDConfig config, double maxMBSortInHeap,
                                       long totalPointCount, int randomSeed) throws IOException {
-      super(maxDoc, tempDir, tempFileNamePrefix, numDataDims, numIndexDims, bytesPerDim, maxPointsInLeafNode, maxMBSortInHeap, totalPointCount);
+      super(maxDoc, tempDir, tempFileNamePrefix, config, maxMBSortInHeap, totalPointCount);
       this.random = new Random(randomSeed);
     }
 
@@ -282,7 +287,7 @@ public class RandomCodec extends AssertingCodec {
     @Override
     protected int split(byte[] minPackedValue, byte[] maxPackedValue, int[] parentDims) {
       // BKD normally defaults by the widest dimension, to try to make as squarish cells as possible, but we just pick a random one ;)
-      return random.nextInt(numIndexDims);
+      return random.nextInt(config.numIndexDims);
     }
   }
 }

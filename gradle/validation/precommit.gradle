@@ -26,7 +26,6 @@ configure(rootProject) {
     dependsOn ":verifyLocks"
     dependsOn ":versionsPropsAreSorted"
     dependsOn ":checkWorkingCopyClean"
-    dependsOn ":validateSourcePatterns"
 
     // Solr validation tasks.
     dependsOn ":solr:validateConfigFileSanity"
@@ -40,9 +39,14 @@ configure(rootProject) {
           "javadoc",
           "rat",
           "ecjLint",
-          "checkMissingDocs"
+          "validateLogCalls",
+          "validateSourcePatterns",
       ]}
     }
   }
+
+  // Each validation task should be attached to check but make sure
+  // precommit() as a whole is a dependency on rootProject.check
+  check.dependsOn precommit
 }
 

@@ -239,9 +239,21 @@ public class FunctionQParser extends QParser {
    * @return List&lt;ValueSource&gt;
    */
   public List<ValueSource> parseValueSourceList() throws SyntaxError {
+    return parseValueSourceList(FLAG_DEFAULT | FLAG_CONSUME_DELIMITER);
+  }
+
+  /**
+   * Parse a list of ValueSource.  Must be the final set of arguments
+   * to a ValueSource.
+   *
+   * @param flags - customize parsing behavior
+   *
+   * @return List&lt;ValueSource&gt;
+   */
+  public List<ValueSource> parseValueSourceList(int flags) throws SyntaxError {
     List<ValueSource> sources = new ArrayList<>(3);
     while (hasMoreArguments()) {
-      sources.add(parseValueSource(FLAG_DEFAULT | FLAG_CONSUME_DELIMITER));
+      sources.add(parseValueSource(flags));
     }
     return sources;
   }
@@ -327,7 +339,7 @@ public class FunctionQParser extends QParser {
     if (ch>='0' && ch<='9'  || ch=='.' || ch=='+' || ch=='-') {
       Number num = sp.getNumber();
       if (num instanceof Long) {
-        valueSource = new LongConstValueSource(num.longValue());
+        valueSource = new ValueSourceParser.LongConstValueSource(num.longValue());
       } else if (num instanceof Double) {
         valueSource = new DoubleConstValueSource(num.doubleValue());
       } else {
@@ -399,9 +411,9 @@ public class FunctionQParser extends QParser {
         sp.expect(")");
       } else {
         if ("true".equals(id)) {
-          valueSource = new BoolConstValueSource(true);
+          valueSource = ValueSourceParser.BoolConstValueSource.TRUE;
         } else if ("false".equals(id)) {
-          valueSource = new BoolConstValueSource(false);
+          valueSource = ValueSourceParser.BoolConstValueSource.FALSE;
         } else {
           if ((flags & FLAG_USE_FIELDNAME_SOURCE) != 0) {
             // Don't try to create a ValueSource for the field, just use a placeholder.

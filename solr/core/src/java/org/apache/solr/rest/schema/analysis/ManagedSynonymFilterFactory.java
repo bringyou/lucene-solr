@@ -32,7 +32,7 @@ import org.apache.lucene.analysis.core.FlattenGraphFilterFactory;  // javadocs
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.synonym.SynonymFilterFactory;
 import org.apache.lucene.analysis.synonym.SynonymMap;
-import org.apache.lucene.analysis.util.ResourceLoader;
+import org.apache.lucene.util.ResourceLoader;
 import org.apache.lucene.util.CharsRef;
 import org.apache.lucene.util.CharsRefBuilder;
 import org.apache.solr.common.SolrException;
@@ -165,7 +165,9 @@ public class ManagedSynonymFilterFactory extends BaseManagedTokenFilterFactory {
           cpsm.mappings.put(key, sortedVals);        
         }
       }
-      log.info("Loaded {} synonym mappings for {}", synonymMappings.size(), getResourceId());      
+      if (log.isInfoEnabled()) {
+        log.info("Loaded {} synonym mappings for {}", synonymMappings.size(), getResourceId());
+      }
     }
 
     @SuppressWarnings("unchecked")
@@ -233,6 +235,7 @@ public class ManagedSynonymFilterFactory extends BaseManagedTokenFilterFactory {
             madeChanges = true;
           }
         } else if (val instanceof List) {
+          @SuppressWarnings({"unchecked"})
           List<String> vals = (List<String>)val;
 
           if (output == null) {

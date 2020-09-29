@@ -22,7 +22,6 @@ import java.util.Set;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.codecs.Codec;
-import org.apache.lucene.index.DocumentsWriterPerThread.IndexingChain;
 import org.apache.lucene.index.IndexWriter.IndexReaderWarmer;
 import org.apache.lucene.index.IndexWriterConfig.OpenMode;
 import org.apache.lucene.search.IndexSearcher;
@@ -67,10 +66,6 @@ public class LiveIndexWriterConfig {
   /** {@link MergeScheduler} to use for running merges. */
   protected volatile MergeScheduler mergeScheduler;
 
-  /** {@link IndexingChain} that determines how documents are
-   *  indexed. */
-  protected volatile IndexingChain indexingChain;
-
   /** {@link Codec} used to write new segments. */
   protected volatile Codec codec;
 
@@ -79,10 +74,6 @@ public class LiveIndexWriterConfig {
 
   /** {@link MergePolicy} for selecting merges. */
   protected volatile MergePolicy mergePolicy;
-
-  /** {@code DocumentsWriterPerThreadPool} to control how
-   *  threads are allocated to {@code DocumentsWriterPerThread}. */
-  protected volatile DocumentsWriterPerThreadPool indexerThreadPool;
 
   /** True if readers should be pooled. */
   protected volatile boolean readerPooling;
@@ -113,6 +104,8 @@ public class LiveIndexWriterConfig {
   /** soft deletes field */
   protected String softDeletesField = null;
 
+  /** Amount of time to wait for merges returned by MergePolicy.findFullFlushMerges(...) */
+  protected volatile long maxFullFlushMergeWaitMillis;
 
   // used by IndexWriterConfig
   LiveIndexWriterConfig(Analyzer analyzer) {
@@ -126,7 +119,6 @@ public class LiveIndexWriterConfig {
     openMode = OpenMode.CREATE_OR_APPEND;
     similarity = IndexSearcher.getDefaultSimilarity();
     mergeScheduler = new ConcurrentMergeScheduler();
-    indexingChain = DocumentsWriterPerThread.defaultIndexingChain;
     codec = Codec.getDefault();
     if (codec == null) {
       throw new NullPointerException();
@@ -135,8 +127,8 @@ public class LiveIndexWriterConfig {
     mergePolicy = new TieredMergePolicy();
     flushPolicy = new FlushByRamOrCountsPolicy();
     readerPooling = IndexWriterConfig.DEFAULT_READER_POOLING;
-    indexerThreadPool = new DocumentsWriterPerThreadPool();
     perThreadHardLimitMB = IndexWriterConfig.DEFAULT_RAM_PER_THREAD_HARD_LIMIT_MB;
+    maxFullFlushMergeWaitMillis = IndexWriterConfig.DEFAULT_MAX_FULL_FLUSH_MERGE_WAIT_MILLIS;
   }
   
   /** Returns the default analyzer to use for indexing documents. */
@@ -348,28 +340,11 @@ public class LiveIndexWriterConfig {
   }
   
   /**
-   * Returns the configured {@link DocumentsWriterPerThreadPool} instance.
-   * 
-   * @see IndexWriterConfig#setIndexerThreadPool(DocumentsWriterPerThreadPool)
-   * @return the configured {@link DocumentsWriterPerThreadPool} instance.
-   */
-  DocumentsWriterPerThreadPool getIndexerThreadPool() {
-    return indexerThreadPool;
-  }
-
-  /**
    * Returns {@code true} if {@link IndexWriter} should pool readers even if
    * {@link DirectoryReader#open(IndexWriter)} has not been called.
    */
   public boolean getReaderPooling() {
     return readerPooling;
-  }
-
-  /**
-   * Returns the indexing chain.
-   */
-  IndexingChain getIndexingChain() {
-    return indexingChain;
   }
 
   /**
@@ -476,6 +451,15 @@ public class LiveIndexWriterConfig {
     return softDeletesField;
   }
 
+  /**
+   * Expert: return the amount of time to wait for merges returned by by MergePolicy.findFullFlushMerges(...).
+   * If this time is reached, we proceed with the commit based on segments merged up to that point.
+   * The merges are not cancelled, and may still run to completion independent of the commit.
+   */
+  public long getMaxFullFlushMergeWaitMillis() {
+    return maxFullFlushMergeWaitMillis;
+  }
+
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
@@ -492,7 +476,6 @@ public class LiveIndexWriterConfig {
     sb.append("codec=").append(getCodec()).append("\n");
     sb.append("infoStream=").append(getInfoStream().getClass().getName()).append("\n");
     sb.append("mergePolicy=").append(getMergePolicy()).append("\n");
-    sb.append("indexerThreadPool=").append(getIndexerThreadPool()).append("\n");
     sb.append("readerPooling=").append(getReaderPooling()).append("\n");
     sb.append("perThreadHardLimitMB=").append(getRAMPerThreadHardLimitMB()).append("\n");
     sb.append("useCompoundFile=").append(getUseCompoundFile()).append("\n");
@@ -500,6 +483,7 @@ public class LiveIndexWriterConfig {
     sb.append("indexSort=").append(getIndexSort()).append("\n");
     sb.append("checkPendingFlushOnUpdate=").append(isCheckPendingFlushOnUpdate()).append("\n");
     sb.append("softDeletesField=").append(getSoftDeletesField()).append("\n");
+    sb.append("maxFullFlushMergeWaitMillis=").append(getMaxFullFlushMergeWaitMillis()).append("\n");
     return sb.toString();
   }
 }

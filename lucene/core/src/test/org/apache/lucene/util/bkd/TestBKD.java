@@ -46,13 +46,11 @@ import org.apache.lucene.util.LuceneTestCase;
 import org.apache.lucene.util.NumericUtils;
 import org.apache.lucene.util.TestUtil;
 
-import static com.carrotsearch.randomizedtesting.RandomizedTest.randomBoolean;
-
 public class TestBKD extends LuceneTestCase {
 
   public void testBasicInts1D() throws Exception {
     try (Directory dir = getDirectory(100)) {
-      BKDWriter w = new BKDWriter(100, dir, "tmp", 1, 1, 4, 2, 1.0f, 100);
+      BKDWriter w = new BKDWriter(100, dir, "tmp", new BKDConfig(1, 1, 4, 2), 1.0f, 100);
       byte[] scratch = new byte[4];
       for(int docID=0;docID<100;docID++) {
         NumericUtils.intToSortableBytes(docID, scratch, 0);
@@ -61,12 +59,14 @@ public class TestBKD extends LuceneTestCase {
 
       long indexFP;
       try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-        indexFP = w.finish(out);
+        Runnable finalizer = w.finish(out, out, out);
+        indexFP = out.getFilePointer();
+        finalizer.run();
       }
 
       try (IndexInput in = dir.openInput("bkd", IOContext.DEFAULT)) {
         in.seek(indexFP);
-        BKDReader r = new BKDReader(in, randomBoolean());
+        BKDReader r = new BKDReader(in, in, in);
 
         // Simple 1D range query:
         final int queryMin = 42;
@@ -128,7 +128,7 @@ public class TestBKD extends LuceneTestCase {
       int numIndexDims = TestUtil.nextInt(random(), 1, numDims);
       int maxPointsInLeafNode = TestUtil.nextInt(random(), 50, 100);
       float maxMB = (float) 3.0 + (3*random().nextFloat());
-      BKDWriter w = new BKDWriter(numDocs, dir, "tmp", numDims, numIndexDims, 4, maxPointsInLeafNode, maxMB, numDocs);
+      BKDWriter w = new BKDWriter(numDocs, dir, "tmp", new BKDConfig(numDims, numIndexDims, 4, maxPointsInLeafNode), maxMB, numDocs);
 
       if (VERBOSE) {
         System.out.println("TEST: numDims=" + numDims + " numIndexDims=" + numIndexDims + " numDocs=" + numDocs);
@@ -163,12 +163,14 @@ public class TestBKD extends LuceneTestCase {
 
       long indexFP;
       try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-        indexFP = w.finish(out);
+        Runnable finalizer = w.finish(out, out, out);
+        indexFP = out.getFilePointer();
+        finalizer.run();
       }
 
       try (IndexInput in = dir.openInput("bkd", IOContext.DEFAULT)) {
         in.seek(indexFP);
-        BKDReader r = new BKDReader(in, randomBoolean());
+        BKDReader r = new BKDReader(in, in, in);
 
         byte[] minPackedValue = r.getMinPackedValue();
         byte[] maxPackedValue = r.getMaxPackedValue();
@@ -269,7 +271,7 @@ public class TestBKD extends LuceneTestCase {
       int numDims = TestUtil.nextInt(random(), 1, 5);
       int maxPointsInLeafNode = TestUtil.nextInt(random(), 50, 100);
       float maxMB = (float) 3.0 + (3*random().nextFloat());
-      BKDWriter w = new BKDWriter(numDocs, dir, "tmp", numDims, numDims, numBytesPerDim, maxPointsInLeafNode, maxMB, numDocs);
+      BKDWriter w = new BKDWriter(numDocs, dir, "tmp", new BKDConfig(numDims, numDims, numBytesPerDim, maxPointsInLeafNode), maxMB, numDocs);
       BigInteger[][] docs = new BigInteger[numDocs][];
 
       byte[] scratch = new byte[numBytesPerDim*numDims];
@@ -290,13 +292,15 @@ public class TestBKD extends LuceneTestCase {
       }
 
       long indexFP;
-      try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-        indexFP = w.finish(out);
+      try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {        
+        Runnable finalizer = w.finish(out, out, out);
+        indexFP = out.getFilePointer();
+        finalizer.run();
       }
 
       try (IndexInput in = dir.openInput("bkd", IOContext.DEFAULT)) {
         in.seek(indexFP);
-        BKDReader r = new BKDReader(in, randomBoolean());
+        BKDReader r = new BKDReader(in, in, in);
 
         int iters = atLeast(100);
         for(int iter=0;iter<iters;iter++) {
@@ -445,7 +449,7 @@ public class TestBKD extends LuceneTestCase {
   public void testTooLittleHeap() throws Exception { 
     try (Directory dir = getDirectory(0)) {
       IllegalArgumentException expected = expectThrows(IllegalArgumentException.class, () -> {
-        new BKDWriter(1, dir, "bkd", 1, 1, 16, 1000000, 0.001, 0);
+        new BKDWriter(1, dir, "bkd", new BKDConfig(1, 1, 16, 1000000), 0.001, 0);
       });
       assertTrue(expected.getMessage().contains("either increase maxMBSortInHeap or decrease maxPointsInLeafNode"));
     }
@@ -703,7 +707,7 @@ public class TestBKD extends LuceneTestCase {
         maxDocs = random().nextLong();
       }
     }
-    BKDWriter w = new BKDWriter(numValues, dir, "_" + seg, numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode, maxMB, maxDocs);
+    BKDWriter w = new BKDWriter(numValues, dir, "_" + seg, new BKDConfig(numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode), maxMB, maxDocs);
     IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT);
     IndexInput in = null;
 
@@ -756,14 +760,16 @@ public class TestBKD extends LuceneTestCase {
                 return curDocIDBase + docID;
               }
             });
-          toMerge.add(w.finish(out));
+          Runnable finalizer = w.finish(out, out, out);
+          toMerge.add(out.getFilePointer());
+          finalizer.run();
           valuesInThisSeg = TestUtil.nextInt(random(), numValues/10, numValues/2);
           segCount = 0;
 
           seg++;
           maxPointsInLeafNode = TestUtil.nextInt(random(), 50, 1000);
           maxMB = (float) 3.0 + (3*random().nextDouble());
-          w = new BKDWriter(numValues, dir, "_" + seg, numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode, maxMB, docValues.length);
+          w = new BKDWriter(numValues, dir, "_" + seg, new BKDConfig(numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode), maxMB, docValues.length);
           lastDocIDBase = docID;
         }
       }
@@ -772,7 +778,9 @@ public class TestBKD extends LuceneTestCase {
 
       if (toMerge != null) {
         if (segCount > 0) {
-          toMerge.add(w.finish(out));
+          Runnable finalizer = w.finish(out, out, out);
+          toMerge.add(out.getFilePointer());
+          finalizer.run();
           final int curDocIDBase = lastDocIDBase;
           docMaps.add(new MergeState.DocMap() {
               @Override
@@ -784,25 +792,29 @@ public class TestBKD extends LuceneTestCase {
         out.close();
         in = dir.openInput("bkd", IOContext.DEFAULT);
         seg++;
-        w = new BKDWriter(numValues, dir, "_" + seg, numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode, maxMB, docValues.length);
+        w = new BKDWriter(numValues, dir, "_" + seg, new BKDConfig(numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode), maxMB, docValues.length);
         List<BKDReader> readers = new ArrayList<>();
         for(long fp : toMerge) {
           in.seek(fp);
-          readers.add(new BKDReader(in, randomBoolean()));
+          readers.add(new BKDReader(in, in, in));
         }
         out = dir.createOutput("bkd2", IOContext.DEFAULT);
-        indexFP = w.merge(out, docMaps, readers);
+        Runnable finalizer = w.merge(out, out, out, docMaps, readers);
+        indexFP = out.getFilePointer();
+        finalizer.run();
         out.close();
         in.close();
         in = dir.openInput("bkd2", IOContext.DEFAULT);
       } else {
-        indexFP = w.finish(out);
+        Runnable finalizer = w.finish(out, out, out);
+        indexFP = out.getFilePointer();
+        finalizer.run();
         out.close();
         in = dir.openInput("bkd", IOContext.DEFAULT);
       }
 
       in.seek(indexFP);
-      BKDReader r = new BKDReader(in, randomBoolean());
+      BKDReader r = new BKDReader(in, in, in);
 
       int iters = atLeast(100);
       for(int iter=0;iter<iters;iter++) {
@@ -1065,18 +1077,20 @@ public class TestBKD extends LuceneTestCase {
   public void testTieBreakOrder() throws Exception {
     try (Directory dir = newDirectory()) {
       int numDocs = 10000;
-      BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", 1, 1, Integer.BYTES, 2, 0.01f, numDocs);
+      BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", new BKDConfig(1, 1, Integer.BYTES, 2), 0.01f, numDocs);
       for(int i=0;i<numDocs;i++) {
         w.add(new byte[Integer.BYTES], i);
       }
 
       IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT);
-      long fp = w.finish(out);
+      Runnable finalizer = w.finish(out, out, out);
+      long fp = out.getFilePointer();
+      finalizer.run();
       out.close();
 
       IndexInput in = dir.openInput("bkd", IOContext.DEFAULT);
       in.seek(fp);
-      BKDReader r = new BKDReader(in, randomBoolean());
+      BKDReader r = new BKDReader(in, in, in);
       r.intersect(new IntersectVisitor() {
           int lastDocID = -1;
 
@@ -1119,7 +1133,7 @@ public class TestBKD extends LuceneTestCase {
         System.arraycopy(pointValue1, i * numBytesPerDim, pointValue2, i * numBytesPerDim, numBytesPerDim);
     }
 
-    BKDWriter w = new BKDWriter(2 * numValues, dir, "_temp", numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode,
+    BKDWriter w = new BKDWriter(2 * numValues, dir, "_temp", new BKDConfig(numDataDims, numIndexDims, numBytesPerDim, maxPointsInLeafNode),
         maxMB, 2 * numValues);
     for (int i = 0; i < numValues; ++i) {
       w.add(pointValue1, i);
@@ -1127,13 +1141,15 @@ public class TestBKD extends LuceneTestCase {
     }
     final long indexFP;
     try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-      indexFP = w.finish(out);
+      Runnable finalizer = w.finish(out, out, out);
+      indexFP = out.getFilePointer();
+      finalizer.run();
       w.close();
     }
 
     IndexInput pointsIn = dir.openInput("bkd", IOContext.DEFAULT);
     pointsIn.seek(indexFP);
-    BKDReader points = new BKDReader(pointsIn);
+    BKDReader points = new BKDReader(pointsIn, pointsIn, pointsIn);
 
     points.intersect(new IntersectVisitor() {
 
@@ -1177,7 +1193,7 @@ public class TestBKD extends LuceneTestCase {
   public void test2DLongOrdsOffline() throws Exception {
     try (Directory dir = newDirectory()) {
       int numDocs = 100000;
-      BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", 2, 2, Integer.BYTES, 2, 0.01f, numDocs);
+      BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", new BKDConfig(2, 2, Integer.BYTES, 2), 0.01f, numDocs);
       byte[] buffer = new byte[2*Integer.BYTES];
       for(int i=0;i<numDocs;i++) {
         random().nextBytes(buffer);
@@ -1185,12 +1201,14 @@ public class TestBKD extends LuceneTestCase {
       }
 
       IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT);
-      long fp = w.finish(out);
+      Runnable finalizer = w.finish(out, out, out);
+      long fp = out.getFilePointer();
+      finalizer.run();
       out.close();
 
       IndexInput in = dir.openInput("bkd", IOContext.DEFAULT);
       in.seek(fp);
-      BKDReader r = new BKDReader(in, randomBoolean());
+      BKDReader r = new BKDReader(in, in, in);
       int[] count = new int[1];
       r.intersect(new IntersectVisitor() {
 
@@ -1229,7 +1247,7 @@ public class TestBKD extends LuceneTestCase {
 
     Directory dir = newFSDirectory(createTempDir());
     int numDocs = atLeast(10000);
-    BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", numDims, numIndexDims, bytesPerDim, 32, 1f, numDocs);
+    BKDWriter w = new BKDWriter(numDocs+1, dir, "tmp", new BKDConfig(numDims, numIndexDims, bytesPerDim, 32), 1f, numDocs);
     byte[] tmp = new byte[bytesUsed];
     byte[] buffer = new byte[numDims * bytesPerDim];
     for(int i=0;i<numDocs;i++) {
@@ -1241,12 +1259,14 @@ public class TestBKD extends LuceneTestCase {
     }
     
     IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT);
-    long fp = w.finish(out);
+    Runnable finalizer = w.finish(out, out, out);
+    long fp = out.getFilePointer();
+    finalizer.run();
     out.close();
 
     IndexInput in = dir.openInput("bkd", IOContext.DEFAULT);
     in.seek(fp);
-    BKDReader r = new BKDReader(in, randomBoolean());
+    BKDReader r = new BKDReader(in, in, in);
     int[] count = new int[1];
     r.intersect(new IntersectVisitor() {
 
@@ -1286,7 +1306,7 @@ public class TestBKD extends LuceneTestCase {
     final byte[] uniquePointValue = new byte[numBytesPerDim];
     random().nextBytes(uniquePointValue);
 
-    BKDWriter w = new BKDWriter(numValues, dir, "_temp", 1, 1, numBytesPerDim, maxPointsInLeafNode,
+    BKDWriter w = new BKDWriter(numValues, dir, "_temp", new BKDConfig(1, 1, numBytesPerDim, maxPointsInLeafNode),
         BKDWriter.DEFAULT_MAX_MB_SORT_IN_HEAP, numValues);
     for (int i = 0; i < numValues; ++i) {
       if (i == numValues / 2) {
@@ -1300,22 +1320,22 @@ public class TestBKD extends LuceneTestCase {
     }
     final long indexFP;
     try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-      indexFP = w.finish(out);
+      Runnable finalizer = w.finish(out, out, out);
+      indexFP = out.getFilePointer();
+      finalizer.run();
       w.close();
     }
     
     IndexInput pointsIn = dir.openInput("bkd", IOContext.DEFAULT);
     pointsIn.seek(indexFP);
-    BKDReader points = new BKDReader(pointsIn);
-
-    int actualMaxPointsInLeafNode = numValues;
-    while (actualMaxPointsInLeafNode > maxPointsInLeafNode) {
-      actualMaxPointsInLeafNode = (actualMaxPointsInLeafNode + 1) / 2;
-    }
+    BKDReader points = new BKDReader(pointsIn, pointsIn, pointsIn);
 
     // If all points match, then the point count is numLeaves * maxPointsInLeafNode
-    final int numLeaves = Integer.highestOneBit((numValues - 1) / actualMaxPointsInLeafNode) << 1;
-    assertEquals(numLeaves * actualMaxPointsInLeafNode,
+    int numLeaves = numValues / maxPointsInLeafNode;
+    if (numValues % maxPointsInLeafNode != 0) {
+      numLeaves++;
+    }
+    assertEquals(numLeaves * maxPointsInLeafNode,
         points.estimatePointCount(new IntersectVisitor() {
           @Override
           public void visit(int docID, byte[] packedValue) throws IOException {}
@@ -1363,8 +1383,8 @@ public class TestBKD extends LuceneTestCase {
       }
     });
     assertTrue(""+pointCount,
-        pointCount == (actualMaxPointsInLeafNode + 1) / 2 || // common case
-        pointCount == 2*((actualMaxPointsInLeafNode + 1) / 2)); // if the point is a split value
+        pointCount == (maxPointsInLeafNode + 1) / 2 || // common case
+        pointCount == 2*((maxPointsInLeafNode + 1) / 2)); // if the point is a split value
 
     pointsIn.close();
     dir.close();
@@ -1448,11 +1468,11 @@ public class TestBKD extends LuceneTestCase {
       }
     };
 
-    BKDWriter w = new BKDWriter(numValues, dir, "_temp", 1, 1, numBytesPerDim, BKDWriter.DEFAULT_MAX_POINTS_IN_LEAF_NODE,
+    BKDWriter w = new BKDWriter(numValues, dir, "_temp", new BKDConfig(1, 1, numBytesPerDim, BKDConfig.DEFAULT_MAX_POINTS_IN_LEAF_NODE),
         BKDWriter.DEFAULT_MAX_MB_SORT_IN_HEAP, numValues);
     expectThrows(IllegalStateException.class, () -> {
       try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-        w.writeField(out, "test_field_name", reader);
+        w.writeField(out, out, out, "test_field_name", reader);
       } finally {
         w.close();
         dir.close();
@@ -1466,7 +1486,7 @@ public class TestBKD extends LuceneTestCase {
     final int numPointsAdded = 50; // exceeds totalPointCount
     final int numBytesPerDim = TestUtil.nextInt(random(), 1, 4);
     final byte[] pointValue = new byte[numBytesPerDim];
-    BKDWriter w = new BKDWriter(numValues, dir, "_temp", 1, 1, numBytesPerDim, 2,
+    BKDWriter w = new BKDWriter(numValues, dir, "_temp", new BKDConfig(1, 1, numBytesPerDim, 2),
         BKDWriter.DEFAULT_MAX_MB_SORT_IN_HEAP, numValues);
     for(int i=0;i<numValues;i++) {
       random().nextBytes(pointValue);
@@ -1485,7 +1505,7 @@ public class TestBKD extends LuceneTestCase {
     final int numPointsAdded = 50; // exceeds totalPointCount
     final int numBytesPerDim = TestUtil.nextInt(random(), 1, 4);
     final byte[][] pointValue = new byte[11][numBytesPerDim];
-    BKDWriter w = new BKDWriter(numValues + 1, dir, "_temp", 1, 1, numBytesPerDim, 2,
+    BKDWriter w = new BKDWriter(numValues + 1, dir, "_temp", new BKDConfig(1, 1, numBytesPerDim, 2),
         BKDWriter.DEFAULT_MAX_MB_SORT_IN_HEAP, numValues);
     for(int i=0;i<numValues + 1;i++) {
       random().nextBytes(pointValue[i]);
@@ -1563,11 +1583,10 @@ public class TestBKD extends LuceneTestCase {
       }
     };
     try (IndexOutput out = dir.createOutput("bkd", IOContext.DEFAULT)) {
-      IllegalStateException ex = expectThrows(IllegalStateException.class, () -> { w.writeField(out, "", val);});
+      IllegalStateException ex = expectThrows(IllegalStateException.class, () -> { w.writeField(out, out, out, "", val);});
       assertEquals("totalPointCount=10 was passed when we were created, but we just hit 11 values", ex.getMessage());
       w.close();
     }
     dir.close();
   }
-
 }

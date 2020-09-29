@@ -39,8 +39,6 @@ import org.apache.lucene.index.MultiDocValues;
 import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.OrdinalMap;
 import org.apache.lucene.index.SortedDocValues;
-import org.apache.lucene.search.BooleanClause.Occur;
-import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.LeafCollector;
@@ -81,6 +79,7 @@ import org.apache.solr.search.DocIterator;
 import org.apache.solr.search.DocList;
 import org.apache.solr.search.DocSlice;
 import org.apache.solr.search.QParser;
+import org.apache.solr.search.QueryUtils;
 import org.apache.solr.search.ReturnFields;
 import org.apache.solr.search.SolrIndexSearcher;
 import org.apache.solr.search.SortSpecParsing;
@@ -177,7 +176,7 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
       sort = SortSpecParsing.parseSortSpec(sortParam, rb.req).getSort();
     }
 
-    Query query;
+    final Query query;
     List<Query> newFilters = new ArrayList<>();
     try {
       if (qs == null) {
@@ -416,16 +415,12 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
       collector = groupExpandCollector;
     }
 
-    if (pfilter.filter != null) {
-      query = new BooleanQuery.Builder()
-          .add(query, Occur.MUST)
-          .add(pfilter.filter, Occur.FILTER)
-          .build();
-    }
-    searcher.search(query, collector);
+    searcher.search(QueryUtils.combineQueryAndFilter(query, pfilter.filter), collector);
 
     ReturnFields returnFields = rb.rsp.getReturnFields();
     LongObjectMap<Collector> groups = ((GroupCollector) groupExpandCollector).getGroups();
+
+    @SuppressWarnings({"rawtypes"})
     NamedList outMap = new SimpleOrderedMap();
     CharsRefBuilder charsRef = new CharsRefBuilder();
     for (LongObjectCursor<Collector> cursor : groups) {
@@ -446,13 +441,13 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
             scores[i] = scoreDoc.score;
           }
           assert topDocs.totalHits.relation == TotalHits.Relation.EQUAL_TO;
-          DocSlice slice = new DocSlice(0, docs.length, docs, scores, topDocs.totalHits.value, Float.NaN);
+          DocSlice slice = new DocSlice(0, docs.length, docs, scores, topDocs.totalHits.value, Float.NaN, TotalHits.Relation.EQUAL_TO);
           addGroupSliceToOutputMap(fieldType, ordBytes, outMap, charsRef, groupValue, slice);
         }
       } else {
         int totalHits = ((TotalHitCountCollector) cursor.value).getTotalHits();
         if (totalHits > 0) {
-          DocSlice slice = new DocSlice(0, 0, null, null, totalHits, 0);
+          DocSlice slice = new DocSlice(0, 0, null, null, totalHits, 0, TotalHits.Relation.EQUAL_TO);
           addGroupSliceToOutputMap(fieldType, ordBytes, outMap, charsRef, groupValue, slice);
         }
       }
@@ -461,7 +456,10 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
     rb.rsp.add("expanded", outMap);
   }
 
-  private void addGroupSliceToOutputMap(FieldType fieldType, IntObjectHashMap<BytesRef> ordBytes, NamedList outMap, CharsRefBuilder charsRef, long groupValue, DocSlice slice) {
+
+  @SuppressWarnings({"unchecked"})
+  private void addGroupSliceToOutputMap(FieldType fieldType, IntObjectHashMap<BytesRef> ordBytes,
+                                        @SuppressWarnings({"rawtypes"})NamedList outMap, CharsRefBuilder charsRef, long groupValue, DocSlice slice) {
     if(fieldType instanceof StrField) {
       final BytesRef bytesRef = ordBytes.get((int)groupValue);
       fieldType.indexedToReadable(bytesRef, charsRef);
@@ -491,8 +489,9 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
     }
   }
 
-  @SuppressWarnings("unchecked")
+
   @Override
+  @SuppressWarnings({"unchecked", "rawtypes"})
   public void handleResponses(ResponseBuilder rb, ShardRequest sreq) {
 
     if (!rb.doExpand) {
@@ -518,6 +517,7 @@ public class ExpandComponent extends SearchComponent implements PluginInfoInitia
     }
   }
 
+  @SuppressWarnings("rawtypes")
   @Override
   public void finishStage(ResponseBuilder rb) {
 

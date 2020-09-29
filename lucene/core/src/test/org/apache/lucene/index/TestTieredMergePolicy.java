@@ -29,6 +29,7 @@ import java.util.Map;
 import org.apache.lucene.analysis.MockAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.MergePolicy.MergeSpecification;
 import org.apache.lucene.index.MergePolicy.OneMerge;
 import org.apache.lucene.store.Directory;
@@ -363,9 +364,9 @@ public class TestTieredMergePolicy extends BaseMergePolicyTestCase {
 
     w.commit(); // want to trigger merge no matter what.
 
-    assertEquals("There should be exactly one very large and one small segment", 2, w.listOfSegmentCommitInfos().size());
-    SegmentCommitInfo info0 = w.listOfSegmentCommitInfos().get(0);
-    SegmentCommitInfo info1 = w.listOfSegmentCommitInfos().get(1);
+    assertEquals("There should be exactly one very large and one small segment", 2, w.cloneSegmentInfos().size());
+    SegmentCommitInfo info0 = w.cloneSegmentInfos().info(0);
+    SegmentCommitInfo info1 = w.cloneSegmentInfos().info(1);
     int largeSegDocCount = Math.max(info0.info.maxDoc(), info1.info.maxDoc());
     int smallSegDocCount = Math.min(info0.info.maxDoc(), info1.info.maxDoc());
     assertEquals("The large segment should have a bunch of docs", largeSegDocCount, remainingDocs);
@@ -651,7 +652,10 @@ public class TestTieredMergePolicy extends BaseMergePolicyTestCase {
     IndexWriter w = new IndexWriter(dir, iwc);
     for(int i=0;i<15000*RANDOM_MULTIPLIER;i++) {
       Document doc = new Document();
-      doc.add(newTextField("id", random().nextLong() + "" + random().nextLong(), Field.Store.YES));
+      // Uncompressible content so that merging 10 segments of size x creates a segment whose size is about 10x
+      byte[] idBytes = new byte[128];
+      random().nextBytes(idBytes);
+      doc.add(new StoredField("id", idBytes));
       w.addDocument(doc);
     }
     IndexReader r = DirectoryReader.open(w);

@@ -391,7 +391,7 @@ public final class IOUtils {
    * 
    * @param th The throwable to rethrow, <strong>must not be null</strong>.
    * @return This method always results in an exception, it never returns any value. 
-   *         See method documentation for detailsa and usage example.
+   *         See method documentation for details and usage example.
    * @throws IOException if the argument was an instance of IOException
    * @throws RuntimeException with the {@link RuntimeException#getCause()} set
    *         to the argument, if it was not an instance of IOException. 
@@ -656,4 +656,14 @@ public final class IOUtils {
      */
     void accept(T input) throws IOException;
   }
+
+  /**
+   * A Function that may throw an IOException
+   * @see java.util.function.Function
+   */
+  @FunctionalInterface
+  public interface IOFunction<T, R> {
+    R apply(T t) throws IOException;
+  }
+
 }

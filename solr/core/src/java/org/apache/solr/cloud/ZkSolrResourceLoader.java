@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import org.apache.solr.common.SolrException.ErrorCode;
 import org.apache.solr.common.cloud.ZkConfigManager;
 import org.apache.solr.common.cloud.ZooKeeperException;
+import org.apache.solr.core.CoreContainer;
 import org.apache.solr.core.SolrResourceLoader;
 import org.apache.solr.core.SolrResourceNotFoundException;
 import org.apache.solr.schema.ZkIndexSchemaReader;
@@ -91,7 +92,7 @@ public class ZkSolrResourceLoader extends SolrResourceLoader {
           // Retry in case of session expiry
           try {
             Thread.sleep(1000);
-            log.debug("Sleeping for 1s before retrying fetching resource=" + resource);
+            log.debug("Sleeping for 1s before retrying fetching resource={}", resource);
           } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
             throw new IOException("Could not load resource=" + resource, ie);
@@ -157,4 +158,9 @@ public class ZkSolrResourceLoader extends SolrResourceLoader {
   }
 
   public ZkIndexSchemaReader getZkIndexSchemaReader() { return zkIndexSchemaReader; }
+
+  @Override
+  public CoreContainer getCoreContainer() {
+    return zkController.getCoreContainer();
+  }
 }

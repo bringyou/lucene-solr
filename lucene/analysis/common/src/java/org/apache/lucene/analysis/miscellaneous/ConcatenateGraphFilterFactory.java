@@ -19,7 +19,7 @@ package org.apache.lucene.analysis.miscellaneous;
 import java.util.Map;
 
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.util.TokenFilterFactory;
+import org.apache.lucene.analysis.TokenFilterFactory;
 import org.apache.lucene.util.Version;
 import org.apache.lucene.util.automaton.TooComplexToDeterminizeException;
 
@@ -65,7 +65,9 @@ public class ConcatenateGraphFilterFactory extends TokenFilterFactory {
   public ConcatenateGraphFilterFactory(Map<String, String> args) {
     super(args);
     Version luceneMatchVersion = getLuceneMatchVersion();
-    if (luceneMatchVersion.onOrAfter(Version.LUCENE_8_4_0)) {
+    @SuppressWarnings("deprecation")
+    Version LUCENE_8_4_0 = Version.LUCENE_8_4_0;
+    if (luceneMatchVersion.onOrAfter(LUCENE_8_4_0)) {
       tokenSeparator = getCharacter(args, "tokenSeparator", ConcatenateGraphFilter.DEFAULT_TOKEN_SEPARATOR);
     } else {
       boolean preserveSep = getBoolean(args, "preserveSep", ConcatenateGraphFilter.DEFAULT_PRESERVE_SEP);
